@@ -3,8 +3,8 @@ use opencv::core::{Point, Rect, Scalar, Size, BORDER_CONSTANT, BORDER_DEFAULT};
 use opencv::highgui::{destroy_all_windows, imshow, wait_key};
 use opencv::imgproc::{
     bounding_rect, cvt_color_def, dilate, erode_def, find_contours_def, gaussian_blur_def,
-    get_structuring_element_def, line_def, morphology_ex_def, rectangle_def, CHAIN_APPROX_SIMPLE,
-    COLOR_BGR2GRAY, MORPH_CLOSE, MORPH_RECT, RETR_TREE,
+    get_structuring_element_def, line_def, morphology_ex_def, put_text_def, rectangle_def,
+    CHAIN_APPROX_SIMPLE, COLOR_BGR2GRAY, FONT_HERSHEY_SIMPLEX, MORPH_CLOSE, MORPH_RECT, RETR_TREE,
 };
 use opencv::prelude::*;
 use opencv::types::VectorOfVectorOfPoint;
@@ -13,9 +13,9 @@ use opencv::videoio::VideoCapture;
 const MIN_W: i32 = 90;
 const MIN_H: i32 = 90;
 
-const LINE_HIGH: i32 = 600;
+const LINE_HIGH: i32 = 550;
 
-const LINE_OFFSET: i32 = 6;
+const LINE_OFFSET: i32 = 7;
 
 fn center(point: &Rect) -> Point {
     let x = point.width / 2;
@@ -114,12 +114,21 @@ fn main() -> opencv::Result<()> {
                 if car.y > (LINE_HIGH - LINE_OFFSET) && (car.y < (LINE_HIGH + LINE_OFFSET)) {
                     car_num += 1;
                     // cars.remove(1);
-                    println!("{:?}", car_num)
                 }
             }
 
             rectangle_def(&mut frame, rect, Scalar::from((0, 0, 255)))?;
         }
+
+        put_text_def(
+            &mut frame,
+            car_num.to_string().as_str(),
+            Point::new(500, 60),
+            FONT_HERSHEY_SIMPLEX,
+            1f64,
+            (0, 0, 255).into(),
+        )?;
+
         imshow("adas", &frame)?;
 
         let key = wait_key(25)?;
