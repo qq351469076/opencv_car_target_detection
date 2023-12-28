@@ -1,3 +1,5 @@
+use opencv::calib3d::{find_homography, RANSAC};
+use opencv::core::{no_array, perspective_transform, Point2f};
 use opencv::features2d::{
     draw_keypoints_def, draw_matches_def, draw_matches_knn_def, BFMatcher, FlannBasedMatcher, ORB,
     SIFT,
@@ -8,9 +10,11 @@ use opencv::imgcodecs::imread_def;
 use opencv::imgproc::{cvt_color_def, COLOR_BGR2GRAY};
 use opencv::prelude::*;
 use opencv::types::{
-    PtrOfIndexParams, PtrOfSearchParams, VectorOfDMatch, VectorOfKeyPoint, VectorOfVectorOfDMatch,
+    PtrOfIndexParams, PtrOfSearchParams, VectorOfDMatch, VectorOfKeyPoint, VectorOfPoint2f,
+    VectorOfVectorOfDMatch,
 };
 use opencv::xfeatures2d::SURF;
+use std::process::exit;
 
 /// SIFT特征检测, 无论图片是放大还是缩小, 依然可以将顶角判断出来
 ///
@@ -267,12 +271,133 @@ fn flann_function() -> opencv::Result<()> {
     Ok(())
 }
 
+/// 单应型矩阵
+///
+/// 一个图片在不同视角有不同维度, 经过某一点可计算出另一点的位置
+fn dan_ying_xing_nv_zhen() -> opencv::Result<()> {
+    let src_mat = imread_def("C:\\Users\\Administrator\\Desktop\\opencv_search.png")?;
+    let mut dst_mat = imread_def("C:\\Users\\Administrator\\Desktop\\opencv_orig.png")?;
+
+    // sift需要灰度化
+    let mut src_gray = Mat::default();
+    cvt_color_def(&src_mat, &mut src_gray, COLOR_BGR2GRAY)?;
+    let mut dst_gray = Mat::default();
+    cvt_color_def(&dst_mat, &mut dst_gray, COLOR_BGR2GRAY)?;
+
+    // 创建sift对象
+    let mut sift = SIFT::create_def()?;
+
+    // 关键点
+    let mut key_point_src = VectorOfKeyPoint::new();
+    let mut key_point_dst = VectorOfKeyPoint::new();
+    // 描述子
+    let mut descriptors_src = Mat::default();
+    let mut descriptors_dst = Mat::default();
+
+    sift.detect_and_compute_def(
+        &src_gray,
+        &Mat::default(),
+        &mut key_point_src,
+        &mut descriptors_src,
+    )?;
+    sift.detect_and_compute_def(
+        &dst_gray,
+        &Mat::default(),
+        &mut key_point_dst,
+        &mut descriptors_dst,
+    )?;
+
+    // 创建匹配器
+    let mut index_params = IndexParams::default()?;
+    index_params.set_algorithm(FLANN_INDEX_KDTREE)?;
+    index_params.set_int("trees", 5)?;
+    let index_params = PtrOfIndexParams::new(index_params);
+
+    let search_params = SearchParams::new_1(50, 0.0, true)?;
+    let search_params = PtrOfSearchParams::new(search_params);
+
+    let flann = FlannBasedMatcher::new(&index_params, &search_params)?;
+
+    let mut best_match = VectorOfVectorOfDMatch::new();
+    let k = 2; // 查找最优的两个点
+
+    flann.knn_train_match_def(&descriptors_src, &descriptors_dst, &mut best_match, k)?;
+
+    // 过滤比较好的关键点
+    let mut result = VectorOfVectorOfDMatch::new();
+
+    for line in &best_match {
+        let mut list = VectorOfDMatch::new();
+
+        for singe in line {
+            // 值越低, 近似度越高
+            if singe.distance < 0.9 {
+                list.push(singe);
+            }
+        }
+
+        result.push(list);
+    }
+
+    if best_match.len() >= 4 {
+        // 单应性矩阵, 意思就是将图A在图B中用矩形圈起来
+        let mut src_pts = VectorOfPoint2f::new();
+        let mut dst_pts = VectorOfPoint2f::new();
+        for key_point in best_match {
+            for elem in key_point {
+                let query_idx = key_point_src.get(elem.query_idx as usize)?;
+                src_pts.push(query_idx.pt());
+
+                let train_idx = key_point_dst.get(elem.train_idx as usize)?;
+                dst_pts.push(train_idx.pt());
+            }
+        }
+
+        // 随机抽样, 经验值5
+        let mut h = find_homography(&src_pts, &dst_pts, &mut no_array(), RANSAC, 5f64)?;
+
+        let weight = h.size()?.width;
+        let height = h.size()?.height;
+
+        let mut pts = VectorOfPoint2f::new();
+        pts.push(Point2f::new(0f32, 0f32));
+        pts.push(Point2f::new(0f32, (height - 1) as f32));
+        pts.push(Point2f::new((weight - 1) as f32, (height - 1) as f32));
+        pts.push(Point2f::new((weight - 1) as f32, 0f32));
+
+        perspective_transform(&pts, &mut h, &no_array())?;
+
+        // polylines_def(&mut dst_mat, &pts, true, Scalar::from((0, 0, 255)))?;
+        //
+        // // 绘制关键点
+        // let mut net_mat = Mat::default();
+        // draw_matches_knn_def(
+        //     &src_mat,
+        //     &key_point_src,
+        //     &dst_mat,
+        //     &key_point_dst,
+        //     &result,
+        //     &mut net_mat,
+        // )?;
+        //
+        imshow("ssd", &h)?;
+
+        wait_key(100000)?;
+    } else {
+        println!("数组长度不能小于4个");
+        exit(0)
+    }
+
+    Ok(())
+}
+
 fn main() -> opencv::Result<()> {
     // sift_function()?;
     // surf_function()?;
     // orb_function()?;
     // bf_function()?;
-    flann_function()?;
+    // flann_function()?;
+    dan_ying_xing_nv_zhen()?;
 
     Ok(())
 }
